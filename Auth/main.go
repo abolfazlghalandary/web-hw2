@@ -39,8 +39,8 @@ type user_account struct {
 type unauthorized_token struct {
 	gorm.Model
 	ID         uint `gorm:"primaryKey"`
-	token      string
-	expiration time.Time
+	Token      string
+	Expiration time.Time
 	CreatedAt  time.Time
 	UpdatedAt  time.Time
 	DeletedAt  gorm.DeletedAt `gorm:"index"`
@@ -48,7 +48,6 @@ type unauthorized_token struct {
 
 var identityKey = "id"
 var port = "8080"
-
 
 func hash(password string) string {
 	return strconv.FormatUint(fnv1a.HashString64(password), 10)
@@ -174,7 +173,7 @@ func main() {
 
 	auth.Use(authMiddleware.MiddlewareFunc())
 	{
-		auth.GET("/user_info",  func (c *gin.Context) {
+		auth.GET("/user_info", func(c *gin.Context) {
 			user, _ := c.Get(identityKey)
 			var user_info user_account
 			db.First(&user_info, "email = ?", user.(*User).Email)
@@ -184,15 +183,18 @@ func main() {
 			})
 		})
 
-		auth.GET("/sign_out",  func (c *gin.Context) {
+		auth.POST("/sign_out", func(c *gin.Context) {
 			claims := jwt.ExtractClaims(c)
 			fmt.Println(claims)
-			user, _ := c.Get(identityKey)
-			var user_info user_account
-			db.First(&user_info, "email = ?", user.(*User).Email)
-			user_info.Password_hash = ""
+			token := unauthorized_token{
+				Token:      fmt.Sprintf("%s", claims),
+				Expiration: time.Now(),
+			}
+			fmt.Println(token)
+			var error = db.Create(&token)
+			fmt.Println(error)
 			c.JSON(200, gin.H{
-				"user": user_info,
+				"result": "signed out",
 			})
 		})
 	}
