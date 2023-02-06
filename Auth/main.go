@@ -175,29 +175,36 @@ func main() {
 	{
 		auth.GET("/user_info", func(c *gin.Context) {
 			user, _ := c.Get(identityKey)
-			var user_info user_account
-			db.First(&user_info, "email = ?", user.(*User).Email)
-			user_info.Password_hash = ""
-			c.JSON(200, gin.H{
-				"user": user_info,
-			})
-		})
-
-		auth.POST("/sign_out", func(c *gin.Context) {
-			claims := jwt.ExtractClaims(c)
-			fmt.Println(claims)
-			token := unauthorized_token{
-				Token:      fmt.Sprintf("%s", claims),
-				Expiration: time.Now(),
+			token := fmt.Sprintf("%s", jwt.ExtractClaims(c))
+			var unauthorized_token unauthorized_token
+			var error = db.First(&unauthorized_token, "token = ?", token).Error
+			if error == nil {
+				c.AbortWithStatusJSON(401, gin.H{"message": "token expired"})
+			} else {
+				var user_info user_account
+				db.First(&user_info, "email = ?", user.(*User).Email)
+				user_info.Password_hash = ""
+				c.JSON(200, gin.H{
+					"user": user_info,
+				})
 			}
-			fmt.Println(token)
-			var error = db.Create(&token)
-			fmt.Println(error)
-			c.JSON(200, gin.H{
-				"result": "signed out",
-			})
 		})
 	}
+
+	auth.POST("/sign_out", func(c *gin.Context) {
+		claims := jwt.ExtractClaims(c)
+		fmt.Println(claims)
+		token := unauthorized_token{
+			Token:      fmt.Sprintf("%s", claims),
+			Expiration: time.Now(),
+		}
+		fmt.Println(token)
+		var error = db.Create(&token)
+		fmt.Println(error)
+		c.JSON(200, gin.H{
+			"result": "signed out",
+		})
+	})
 
 	if err := http.ListenAndServe(":"+port, r); err != nil {
 		log.Fatal(err)
