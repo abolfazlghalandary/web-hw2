@@ -9,39 +9,41 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"fmt"
+	"github.com/go-playground/validator/v10"
+	"github.com/segmentio/fasthash/fnv1a"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
+	"strconv"
 )
 
 type login struct {
-	Username string `form:"username" json:"username" binding:"required"`
+	Email    string `form:"email" json:"email" binding:"required"`
 	Password string `form:"password" json:"password" binding:"required"`
 }
 
 type user_account struct {
 	gorm.Model
-	ID        uint           `gorm:"primaryKey"`
-	Email         string	`form:"email"`
-	Phone_number  string	`form:"phone"`
-	Gender        string	`form:"gender"`
-	First_name    string	`form:"first_name"`
-	Last_name     string	`form:"last_name"`
-	Password_hash string	`form:"password"`
-	CreatedAt time.Time
-	UpdatedAt time.Time
-	DeletedAt gorm.DeletedAt `gorm:"index"`
+	ID            uint   `gorm:"primaryKey"`
+	Email         string `form:"email" validate:"required,email"`
+	Phone_number  string `form:"phone" validate:"required,e164"`
+	Gender        string `form:"gender" validate:"required"`
+	First_name    string `form:"first_name" validate:"required,alpha"`
+	Last_name     string `form:"last_name" validate:"required,alpha"`
+	Password_hash string `form:"password" validate:"required"`
+	CreatedAt     time.Time
+	UpdatedAt     time.Time
+	DeletedAt     gorm.DeletedAt `gorm:"index"`
 }
 
 type unauthorized_token struct {
 	gorm.Model
-	ID        uint           `gorm:"primaryKey"`
+	ID         uint `gorm:"primaryKey"`
 	token      string
 	expiration time.Time
-	CreatedAt time.Time
-	UpdatedAt time.Time
-	DeletedAt gorm.DeletedAt `gorm:"index"`
+	CreatedAt  time.Time
+	UpdatedAt  time.Time
+	DeletedAt  gorm.DeletedAt `gorm:"index"`
 }
-
 
 var identityKey = "id"
 var port = "8080"
@@ -50,32 +52,38 @@ func helloHandler(c *gin.Context) {
 	claims := jwt.ExtractClaims(c)
 	user, _ := c.Get(identityKey)
 	c.JSON(200, gin.H{
-		"userID":   claims[identityKey],
-		"userName": user.(*User).UserName,
-		"text":     "Hello World.",
+		"userID": claims[identityKey],
+		"emial":  user.(*User).Email,
+		"text":   "Hello World.",
 	})
 }
 
+func hash(password string) string {
+	return strconv.FormatUint(fnv1a.HashString64(password), 10)
+}
+
 type User struct {
-	UserName  string
+	Email     string
 	FirstName string
 	LastName  string
 }
 
 func main() {
 	r := gin.Default()
+	dsn := "host=localhost user=postgres password=dev dbname=dev port=5432 sslmode=disable TimeZone=Asia/Shanghai"
+	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
+	var validate *validator.Validate = validator.New()
 
-	// the jwt middleware
 	authMiddleware, err := jwt.New(&jwt.GinJWTMiddleware{
 		Realm:       "test zone",
-		Key:         []byte("secret key"),
+		Key:         []byte("la'anat be web"),
 		Timeout:     time.Hour,
 		MaxRefresh:  time.Hour,
 		IdentityKey: identityKey,
 		PayloadFunc: func(data interface{}) jwt.MapClaims {
 			if v, ok := data.(*User); ok {
 				return jwt.MapClaims{
-					identityKey: v.UserName,
+					identityKey: v.Email,
 				}
 			}
 			return jwt.MapClaims{}
@@ -83,7 +91,7 @@ func main() {
 		IdentityHandler: func(c *gin.Context) interface{} {
 			claims := jwt.ExtractClaims(c)
 			return &User{
-				UserName: claims[identityKey].(string),
+				Email: claims[identityKey].(string),
 			}
 		},
 		Authenticator: func(c *gin.Context) (interface{}, error) {
@@ -91,25 +99,24 @@ func main() {
 			if err := c.ShouldBind(&loginVals); err != nil {
 				return "", jwt.ErrMissingLoginValues
 			}
-			userID := loginVals.Username
+			email := loginVals.Email
 			password := loginVals.Password
 
-			if (userID == "admin" && password == "admin") || (userID == "test" && password == "test") {
+			var user user_account
+			db.First(&user, "email = ?", email)
+
+			if user.Password_hash == hash(password) {
 				return &User{
-					UserName:  userID,
-					LastName:  "Bo-Yi",
-					FirstName: "Wu",
+					Email:     user.Email,
+					LastName:  user.Last_name,
+					FirstName: user.First_name,
 				}, nil
 			}
 
 			return nil, jwt.ErrFailedAuthentication
 		},
 		Authorizator: func(data interface{}, c *gin.Context) bool {
-			if v, ok := data.(*User); ok && v.UserName == "admin" {
-				return true
-			}
-
-			return false
+			return true
 		},
 		Unauthorized: func(c *gin.Context, code int, message string) {
 			c.JSON(code, gin.H{
@@ -117,22 +124,8 @@ func main() {
 				"message": message,
 			})
 		},
-		// TokenLookup is a string in the form of "<source>:<name>" that is used
-		// to extract token from the request.
-		// Optional. Default value "header:Authorization".
-		// Possible values:
-		// - "header:<name>"
-		// - "query:<name>"
-		// - "cookie:<name>"
-		// - "param:<name>"
 		TokenLookup: "header: Authorization, query: token, cookie: jwt",
-		// TokenLookup: "query:token",
-		// TokenLookup: "cookie:token",
-
-		// TokenHeadName is a string in the header. Default value is "Bearer"
 		TokenHeadName: "Bearer",
-
-		// TimeFunc provides the current time. You can override it to use another time value. This is useful for testing or if your server uses a different time zone than your tokens.
 		TimeFunc: time.Now,
 	})
 
@@ -140,17 +133,12 @@ func main() {
 		log.Fatal("JWT Error:" + err.Error())
 	}
 
-	// When you use jwt.New(), the function is already automatically called for checking,
-	// which means you don't need to call it again.
 	errInit := authMiddleware.MiddlewareInit()
-
-	dsn := "host=localhost user=postgres password=dev dbname=dev port=5432 sslmode=disable TimeZone=Asia/Shanghai"
-	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
 
 	if errInit != nil {
 		log.Fatal("authMiddleware.MiddlewareInit() Error:" + errInit.Error())
 	}
-	
+
 	r.NoRoute(authMiddleware.MiddlewareFunc(), func(c *gin.Context) {
 		claims := jwt.ExtractClaims(c)
 		log.Printf("NoRoute claims: %#v\n", claims)
@@ -165,9 +153,26 @@ func main() {
 		var user user_account
 		c.Bind(&user)
 		fmt.Println(user)
-		var result = db.Create(&user)
-		fmt.Println(result)
-		// todo
+		err := validate.Struct(user)
+		if err != nil {
+			c.AbortWithStatusJSON(400, gin.H{"field_error": err})
+		} else {
+			if !(user.Gender == "M" || user.Gender == "F") {
+				c.AbortWithStatusJSON(400, gin.H{"field_error": "Invalid Gender, must be M or F"})
+			} else {
+				user_record := user_account{
+					Email:         user.Email,
+					Phone_number:  user.Phone_number,
+					First_name:    user.First_name,
+					Last_name:     user.Last_name,
+					Gender:        user.Gender,
+					Password_hash: hash(user.Password_hash),
+				}
+				var result = db.Create(&user_record)
+				fmt.Println(result)
+				authMiddleware.LoginHandler(c)
+			}
+		}
 	})
 
 	auth.Use(authMiddleware.MiddlewareFunc())
@@ -175,7 +180,7 @@ func main() {
 		auth.GET("/hello", helloHandler)
 	}
 
-	if err := http.ListenAndServe(":" + port, r); err != nil {
+	if err := http.ListenAndServe(":"+port, r); err != nil {
 		log.Fatal(err)
 	}
 }
