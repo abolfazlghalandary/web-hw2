@@ -69,11 +69,10 @@ func main() {
 	var validate *validator.Validate = validator.New()
 	var ctx = context.Background()
 	rdb := redis.NewClient(&redis.Options{
-        Addr:     "localhost:6379",
-        Password: "", // no password set
-        DB:       0,  // use default DB
-    })
-
+		Addr:     "localhost:6379",
+		Password: "", // no password set
+		DB:       0,  // use default DB
+	})
 
 	authMiddleware, err := jwt.New(&jwt.GinJWTMiddleware{
 		Realm:       "test zone",
@@ -186,21 +185,24 @@ func main() {
 		auth.GET("/user_info", func(c *gin.Context) {
 			user, _ := c.Get(identityKey)
 			token := fmt.Sprintf("%s", jwt.ExtractClaims(c))
-			_, err := rdb.Get(ctx, token).Result()
-			if err != redis.Nil {
-				c.AbortWithStatusJSON(401, gin.H{"message": "token expired"})
-			}
-			var unauthorized_token unauthorized_token
-			var error = db.First(&unauthorized_token, "token = ?", token).Error
-			if error == nil {
+			value, err := rdb.Get(ctx, token).Result()
+			fmt.Println(value)
+			fmt.Println(err)
+			if err == nil {
 				c.AbortWithStatusJSON(401, gin.H{"message": "token expired"})
 			} else {
-				var user_info user_account
-				db.First(&user_info, "email = ?", user.(*User).Email)
-				user_info.Password_hash = ""
-				c.JSON(200, gin.H{
-					"user": user_info,
-				})
+				var unauthorized_token unauthorized_token
+				var error = db.First(&unauthorized_token, "token = ?", token).Error
+				if error == nil {
+					c.AbortWithStatusJSON(401, gin.H{"message": "token expired"})
+				} else {
+					var user_info user_account
+					db.First(&user_info, "email = ?", user.(*User).Email)
+					user_info.Password_hash = ""
+					c.JSON(200, gin.H{
+						"user": user_info,
+					})
+				}
 			}
 		})
 	}
