@@ -49,15 +49,6 @@ type unauthorized_token struct {
 var identityKey = "id"
 var port = "8080"
 
-func helloHandler(c *gin.Context) {
-	claims := jwt.ExtractClaims(c)
-	user, _ := c.Get(identityKey)
-	c.JSON(200, gin.H{
-		"userID": claims[identityKey],
-		"emial":  user.(*User).Email,
-		"text":   "Hello World.",
-	})
-}
 
 func hash(password string) string {
 	return strconv.FormatUint(fnv1a.HashString64(password), 10)
@@ -183,7 +174,27 @@ func main() {
 
 	auth.Use(authMiddleware.MiddlewareFunc())
 	{
-		auth.GET("/hello", helloHandler)
+		auth.GET("/user_info",  func (c *gin.Context) {
+			user, _ := c.Get(identityKey)
+			var user_info user_account
+			db.First(&user_info, "email = ?", user.(*User).Email)
+			user_info.Password_hash = ""
+			c.JSON(200, gin.H{
+				"user": user_info,
+			})
+		})
+
+		auth.GET("/sign_out",  func (c *gin.Context) {
+			claims := jwt.ExtractClaims(c)
+			fmt.Println(claims)
+			user, _ := c.Get(identityKey)
+			var user_info user_account
+			db.First(&user_info, "email = ?", user.(*User).Email)
+			user_info.Password_hash = ""
+			c.JSON(200, gin.H{
+				"user": user_info,
+			})
+		})
 	}
 
 	if err := http.ListenAndServe(":"+port, r); err != nil {
