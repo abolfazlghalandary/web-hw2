@@ -15,6 +15,9 @@ import (
 	"github.com/segmentio/fasthash/fnv1a"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
+
+	"context"
+	"github.com/redis/go-redis/v9"
 )
 
 type login struct {
@@ -64,6 +67,13 @@ func main() {
 	dsn := "host=localhost user=postgres password=dev dbname=dev port=5432 sslmode=disable TimeZone=Asia/Shanghai"
 	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
 	var validate *validator.Validate = validator.New()
+	var ctx = context.Background()
+	rdb := redis.NewClient(&redis.Options{
+        Addr:     "localhost:6379",
+        Password: "", // no password set
+        DB:       0,  // use default DB
+    })
+
 
 	authMiddleware, err := jwt.New(&jwt.GinJWTMiddleware{
 		Realm:       "test zone",
@@ -176,6 +186,10 @@ func main() {
 		auth.GET("/user_info", func(c *gin.Context) {
 			user, _ := c.Get(identityKey)
 			token := fmt.Sprintf("%s", jwt.ExtractClaims(c))
+			_, err := rdb.Get(ctx, token).Result()
+			if err != redis.Nil {
+				c.AbortWithStatusJSON(401, gin.H{"message": "token expired"})
+			}
 			var unauthorized_token unauthorized_token
 			var error = db.First(&unauthorized_token, "token = ?", token).Error
 			if error == nil {
@@ -201,6 +215,10 @@ func main() {
 		fmt.Println(token)
 		var error = db.Create(&token)
 		fmt.Println(error)
+		err := rdb.Set(ctx, fmt.Sprintf("%s", claims), "nothing", 0).Err()
+		if err != nil {
+			panic(err)
+		}
 		c.JSON(200, gin.H{
 			"result": "signed out",
 		})
