@@ -9,11 +9,12 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"fmt"
+	"strconv"
+
 	"github.com/go-playground/validator/v10"
 	"github.com/segmentio/fasthash/fnv1a"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
-	"strconv"
 )
 
 type login struct {
@@ -25,7 +26,7 @@ type user_account struct {
 	gorm.Model
 	ID            uint   `gorm:"primaryKey"`
 	Email         string `form:"email" validate:"required,email"`
-	Phone_number  string `form:"phone" validate:"required,e164"`
+	Phone_number  string `form:"phone" validate:"required,numeric"`
 	Gender        string `form:"gender" validate:"required"`
 	First_name    string `form:"first_name" validate:"required,alpha"`
 	Last_name     string `form:"last_name" validate:"required,alpha"`
@@ -124,9 +125,9 @@ func main() {
 				"message": message,
 			})
 		},
-		TokenLookup: "header: Authorization, query: token, cookie: jwt",
+		TokenLookup:   "header: Authorization, query: token, cookie: jwt",
 		TokenHeadName: "Bearer",
-		TimeFunc: time.Now,
+		TimeFunc:      time.Now,
 	})
 
 	if err != nil {
@@ -155,7 +156,8 @@ func main() {
 		fmt.Println(user)
 		err := validate.Struct(user)
 		if err != nil {
-			c.AbortWithStatusJSON(400, gin.H{"field_error": err})
+			fmt.Println(err.Error())
+			c.AbortWithStatusJSON(400, gin.H{"field_error": err.Error()})
 		} else {
 			if !(user.Gender == "M" || user.Gender == "F") {
 				c.AbortWithStatusJSON(400, gin.H{"field_error": "Invalid Gender, must be M or F"})
@@ -168,9 +170,13 @@ func main() {
 					Gender:        user.Gender,
 					Password_hash: hash(user.Password_hash),
 				}
-				var result = db.Create(&user_record)
-				fmt.Println(result)
-				authMiddleware.LoginHandler(c)
+				var error = db.Create(&user_record).Error
+				fmt.Println(error)
+				if error != nil {
+					c.AbortWithStatusJSON(400, gin.H{"register_error": error})
+				} else {
+					authMiddleware.LoginHandler(c)
+				}
 			}
 		}
 	})
