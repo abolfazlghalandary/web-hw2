@@ -59,9 +59,8 @@ async function validate_buy(params){
     return capacity - bought_number >= number ? null : 'there is no enough capacity';
 }
 
-async function buy_ticket(params) {
+async function buy_ticket(params,userId) {
     let {
-        corresponding_user_id,
         title,
         first_name,
         last_name,
@@ -85,7 +84,7 @@ async function buy_ticket(params) {
 
 
     let queryInputs = [
-        corresponding_user_id,
+        userId,
         title,
         first_name,
         last_name,
@@ -103,9 +102,8 @@ async function buy_ticket(params) {
 }
 
 
-async function get_user_tickets(params){
-    let {user_id} = params
-
+async function get_user_tickets(user_id){
+    
     const client = new Client(clientData)
     await client.connect()
     let rawQuery = fs.readFileSync('public/queries/get_user_tickets.sql', 'utf8');
