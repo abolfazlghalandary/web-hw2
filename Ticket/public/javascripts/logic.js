@@ -4,8 +4,8 @@ const fs = require('fs');
 const clientData = {
     user: 'postgres',
     host: 'localhost',
-    database: 'postgres',
-    password: '1273769023Kh#',
+    database: 'dev',
+    password: 'dev',
     port: 5432,
 }
 
